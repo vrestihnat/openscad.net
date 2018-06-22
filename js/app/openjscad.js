@@ -9,7 +9,7 @@ var DEFAULT_COLORSCHEME = {backgroundColor: [0.93, 0.93, 0.93], faceColor: [0.8,
 // tumble it around by dragging the mouse.
 OpenJsCad.Viewer = function (containerelement, width, height, initialdepth, colorScheme) {
   viewer = this;
-  var gl = GL.create();
+  var gl = GL.create({preserveDrawingBuffer: true});
   this.gl = gl;
   this.angleX = 291;
   this.angleY = 0;
@@ -22,7 +22,7 @@ OpenJsCad.Viewer = function (containerelement, width, height, initialdepth, colo
 
   // Set to true so lines don't use the depth buffer
   this.lineOverlay = false;
-
+  
   // Set up the viewport
   gl.canvas.width = width;
   gl.canvas.height = height;
@@ -55,15 +55,55 @@ OpenJsCad.Viewer = function (containerelement, width, height, initialdepth, colo
       gl_FragColor = vec4(0.0, 0.0, 0.0, 0.1);\
     }\
   ');
+//  this.lightingShader = new GL.Shader('\
+//    void main() {\
+//      gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;\
+//    }\
+//  ', '\
+//    void main() {\
+//      gl_FragColor = vec4(0.0, 0.0, 0.0, 0.1);\
+//    }\
+//  ');
+//  this.lightingShader = new GL.Shader('\
+//       void main() {\
+//         gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;\
+//       }\
+//     ', '\
+//       void main() {\
+//         gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);\
+//       }\
+//     ');
 
   // Shader with diffuse and specular lighting
+//  this.lightingShader = new GL.Shader('\
+//    varying vec4 color;\
+//    varying vec3 normal;\
+//    varying vec3 light;\
+//    void main() {\
+//      const vec3 lightDir = vec3(1.0, 2.0, 3.0) / 3.741657386773941;\
+//      light = lightDir;\
+//      color.rgb = gl_Color.rgb;\
+//      color.a = gl_Color.a;\
+//      normal = gl_NormalMatrix * gl_Normal;\
+//      gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;\
+//    }\
+//  ', '\
+//    varying vec4 color;\
+//    varying vec3 normal;\
+//    varying vec3 light;\
+//    void main() {\
+//      vec3 n = normalize(normal);\
+//      float diffuse = max(0.0, dot(light, n));\
+//      float specular = pow(max(0.0, -reflect(light, n).z), 10.0) * sqrt(diffuse);\
+//      gl_FragColor = vec4(mix(color.rgb * (0.3 + 0.7 * diffuse), vec3(1.0), specular), color.a);\
+//    }\
+//  ');
+
+// Shader without diffuse and specular lighting
   this.lightingShader = new GL.Shader('\
     varying vec4 color;\
     varying vec3 normal;\
-    varying vec3 light;\
     void main() {\
-      const vec3 lightDir = vec3(1.0, 2.0, 3.0) / 3.741657386773941;\
-      light = lightDir;\
       color.rgb = gl_Color.rgb;\
       color.a = gl_Color.a;\
       normal = gl_NormalMatrix * gl_Normal;\
@@ -72,15 +112,14 @@ OpenJsCad.Viewer = function (containerelement, width, height, initialdepth, colo
   ', '\
     varying vec4 color;\
     varying vec3 normal;\
-    varying vec3 light;\
     void main() {\
       vec3 n = normalize(normal);\
-      float diffuse = max(0.0, dot(light, n));\
-      float specular = pow(max(0.0, -reflect(light, n).z), 10.0) * sqrt(diffuse);\
-      gl_FragColor = vec4(mix(color.rgb * (0.3 + 0.7 * diffuse), vec3(1.0), specular), color.a);\
+      gl_FragColor = vec4(color.rgb, color.a);\
     }\
   ');
-
+  
+  this.ctx2D = document.createElement('canvas').getContext('2d');
+  
   containerelement.appendChild(gl.canvas);
 
   var _this = this;
@@ -103,13 +142,13 @@ OpenJsCad.Viewer = function (containerelement, width, height, initialdepth, colo
   gl.onmousemove = function (e) {
 	_this.onMouseMove(e);
   };
-  gl.canvas.onclick = function (e) {
+  gl.onmouseup = function (e) {
 	_this.onClick(e);
   };
 
 
 
-  
+
   gl.ondraw = function () {
 	_this.onDraw();
   };
@@ -118,7 +157,12 @@ OpenJsCad.Viewer = function (containerelement, width, height, initialdepth, colo
 };
 
 OpenJsCad.Viewer.prototype = {
-  csgOri:'',
+  csgOri: {},
+  objectsJSOri: {},
+  ctx2D:{},
+  setJSObjects: function (obj) {
+	this.objectsJSOri = obj;
+  },
   setCsg: function (csg) {
 	this.csgOri = csg
 	this.mesh = OpenJsCad.Viewer.csgToMesh(csg);
@@ -155,11 +199,34 @@ OpenJsCad.Viewer.prototype = {
   },
 
   onClick: function (e) {
+	var gl = this.gl;
+	var that = this;
+//	const pos = {
+//	  x: e.clientX-gl.canvas.offsetLeft,
+//	  y: e.clientY-gl.canvas.offsetTop
+//	};
 	const pos = {
-	  x: e.clientX,
-	  y: e.clientY
+	  x: e.offsetX,
+	  y: e.offsetY
 	};
-	console.log(this.csgOri);
+
+//	var pixels = new Uint8Array(4);
+//	requestAnimationFrame(function () {
+//	  gl.readPixels(pos.x, pos.y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+//	  console.log(pos,pixels);
+//	});
+
+	// same preserveDrawingBuffer workaround
+	requestAnimationFrame(function () {
+	  // move the target image in the top left corner of our reader,
+	  //  because we want only a single pixel
+	  that.ctx2D.drawImage(gl.canvas, -pos.x, -pos.y);
+	  var pixels = that.ctx2D.getImageData(0, 0, 1, 1).data;
+	  console.log(pixels);
+	});
+//	console.log(color);
+//	console.log(this.csgOri);
+//	console.log(pos);
   },
   onMouseMove: function (e) {
 	if (e.dragging) {
@@ -631,6 +698,7 @@ OpenJsCad.Processor.prototype = {
 	{
 	  var csg = OpenJsCad.Processor.convertToSolid(obj);
 	  this.viewer.setCsg(csg);
+	  this.viewer.setJSObjects(obj);
 	}
 	this.hasValidCurrentObject = true;
   },
